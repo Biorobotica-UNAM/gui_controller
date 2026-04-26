@@ -53,68 +53,95 @@ class ROS2NodeChecker(Node):
         if our_name in self.running_nodes:
             self.running_nodes.remove(our_name)
 
-    def kill_orphan_nodes(self, keep_nodes: list):
-        """
-        Mata todos los nodos actualmente en ejecución excepto:
-        - El propio nodo de monitoreo
-        - Los nodos listados en keep_nodes
-        """
-        # Obtener lista actual de nodos
-        # self.get_logger().info("Iniciando limpieza agresiva de nodos residuales...")
-        
-        # Obtener lista de nodos actuales
-        self.refresh_node_list()
-        current_nodes = set(self.running_nodes)
-        our_name = '/' + self.get_name()
-        
-        # Nodos a matar: todos menos el nuestro
-        nodes_to_kill = current_nodes - {our_name}
-        
-        if not nodes_to_kill:
-            # self.get_logger().info("No se encontraron nodos residuales.")
-            return
-
-        self.get_logger().info(f"Eliminando {len(nodes_to_kill)} nodos residuales...")
-        
-        # Primero intentar con ros2 node kill para cada uno
-        for node in nodes_to_kill:
-            try:
-                subprocess.run(
-                    ['ros2', 'node', 'kill', node],
-                    capture_output=True,
-                    timeout=3
-                )
-                self.get_logger().info(f"  kill enviado a {node}")
-            except Exception as e:
-                self.get_logger().warning(f"  fallo kill para {node}: {e}")
-
-        # Esperar un poco a que mueran
-        import time
-        time.sleep(2)
-
-        # Verificar si quedan procesos de nodos ROS (búsqueda por línea de comandos)
+    def kill_node_by_name(self, node_name: str):
+        """Mata un nodo ROS 2 buscando su PID con patrones flexibles."""
+        import subprocess, os, signal
+        short_name = node_name.split('/')[-1]  # nombre sin namespace
         try:
-            # Listar todos los procesos que contengan "ros2" o nombres de nodos típicos
-            ps_result = subprocess.run(
-                ['ps', 'aux'],
-                capture_output=True,
-                text=True
-            )
-            lines = ps_result.stdout.split('\n')
-            for line in lines:
-                # Saltar nuestro propio proceso y el nodo de control
-                if 'gui_controller' in line or 'python3.*gui_controller' in line:
-                #     continue
-                # if 'ros2' in line or 'clips_node' in line or 'primitive_to_clips' in line or 'supervisor' in line:
-                    # Extraer PID (segunda columna en ps aux)
+            ps = subprocess.run(['ps', 'aux'], capture_output=True, text=True, timeout=3)
+            for line in ps.stdout.split('\n'):
+                # Saltar procesos del sistema y del propio script
+                if 'python3' in line and 'gui_controller.py' in line:
+                    continue
+                # Buscar el nodo: ya sea como __node:=/completo, __node:=corto o solo el corto como palabra
+                if (f'__node:={node_name}' in line or 
+                    f'__node:={short_name}' in line or
+                    f'{short_name}' in line.split()):  
+                    # Si aparece el nombre corto en los argumentos (evita falsos positivos, pero bueno)
+                    # Extraer PID
                     parts = line.split()
                     if len(parts) > 1:
                         pid = parts[1]
                         try:
                             os.kill(int(pid), signal.SIGKILL)
-                            self.get_logger().info(f"  SIGKILL enviado a PID {pid}: {line.strip()}")
-                        except Exception:
-                            pass
+                            self.get_logger().info(f'  Nodo {node_name} eliminado (PID {pid})')
+                            return True
+                        except ProcessLookupError:
+                            self.get_logger().info(f'  PID {pid} ya no existe')
+                            return False
+                        except Exception as e:
+                            self.get_logger().warning(f'  Error al matar PID {pid}: {e}')
+                            return False
+            self.get_logger().info(f'  No se encontró proceso para {node_name}')
+            return False
+        except Exception as e:
+            self.get_logger().error(f'Error matando {node_name}: {e}')
+            return False
+
+    def kill_orphan_nodes(self, keep_nodes: list = None):
+        """
+        Mata todos los nodos ROS 2 actualmente en ejecución excepto:
+        - El propio nodo de monitoreo (gui_controller)
+        - Los nodos listados en keep_nodes (si se proporciona)
+        Utiliza búsqueda por proceso (ps aux + __node:=...) para ROS 2 Jazzy.
+        """
+        self.get_logger().info("Iniciando limpieza de nodos residuales...")
+        self.refresh_node_list()
+        current_nodes = set(self.running_nodes)
+        our_name = '/' + self.get_name()
+
+        # Nodos a matar: todos menos el nuestro
+        nodes_to_kill = current_nodes - {our_name}
+        # Si se proporciona lista de nodos a conservar, también los excluimos
+        if keep_nodes is not None:
+            nodes_to_kill -= set(keep_nodes)
+
+        if not nodes_to_kill:
+            self.get_logger().info("No se encontraron nodos residuales.")
+            return
+
+        self.get_logger().info(f"Eliminando {len(nodes_to_kill)} nodos residuales...")
+
+        # Buscar y matar por PID usando el argumento __node:=
+        import subprocess, os, signal
+        try:
+            ps_result = subprocess.run(
+                ['ps', 'aux'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            lines = ps_result.stdout.split('\n')
+            for line in lines:
+                # Ignorar procesos del sistema y del propio script GUI
+                if 'python3' in line and 'gui_controller.py' in line:
+                    continue
+                if 'ps aux' in line:   # el propio comando de búsqueda
+                    continue
+                for node_name in nodes_to_kill:
+                    # Buscar el patrón __node:=/nombre_nodo
+                    if f'__node:={node_name}' in line or f'__node:={node_name.split("/")[-1]}' in line:
+                        parts = line.split()
+                        if len(parts) > 1:
+                            pid = parts[1]
+                            try:
+                                os.kill(int(pid), signal.SIGKILL)
+                                self.get_logger().info(f"  SIGKILL enviado a {node_name} (PID {pid})")
+                                break  # solo un PID por nodo
+                            except ProcessLookupError:
+                                pass
+                            except Exception as e:
+                                self.get_logger().warning(f"  Error matando PID {pid}: {e}")
         except Exception as e:
             self.get_logger().error(f"Error en limpieza por PID: {e}")
 
@@ -166,7 +193,7 @@ class NodeControlPanel(QMainWindow):
         # Timer para refresco automático de la lista de nodos
         self.timer = QTimer()
         self.timer.timeout.connect(self.refresh_node_list)
-        self.timer.start(2000)
+        self.timer.start(1000)
 
         # Timer para monitorear el estado de los procesos (si ya terminaron)
         self.process_monitor_timer = QTimer()
@@ -325,10 +352,12 @@ class NodeControlPanel(QMainWindow):
             self.processes['planning'] = None
 
     def closeEvent(self, event):
-        """Al cerrar la ventana, detener todos los procesos lanzados."""
+        """Al cerrar la ventana, detener todos los procesos lanzados y nodos ROS."""
         self.timer.stop()
         if hasattr(self, 'process_monitor_timer'):
             self.process_monitor_timer.stop()
+
+        # Primero matar los procesos de terminal (si aún existen)
         for key, proc in self.processes.items():
             if proc is not None and proc.poll() is None:
                 try:
@@ -338,6 +367,11 @@ class NodeControlPanel(QMainWindow):
                         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                 except Exception:
                     pass
+
+        # Luego eliminar todos los nodos ROS lanzados con el nuevo método
+        # Excluimos nuestro propio nodo y los que estén en expected_nodes (que no se lanzaron desde aquí)
+        self.ros_node.kill_orphan_nodes(keep_nodes=self.expected_nodes)
+
         event.accept()
 
 

@@ -29,8 +29,6 @@ expected_nodes:
   - /navigation/simple_move
   - /navigation/static_map_server
   - /navigation/transform_listener
-  - /navigation/transform_listener
-  - /navigation/transform_listener
   - /planning/clips_node
   - /planning/primitive_to_clips
   - /rviz2
