@@ -54,97 +54,58 @@ class ROS2NodeChecker(Node):
             self.running_nodes.remove(our_name)
 
     def kill_node_by_name(self, node_name: str):
-        """Mata un nodo ROS 2 buscando su PID con patrones flexibles."""
-        import subprocess, os, signal
-        short_name = node_name.split('/')[-1]  # nombre sin namespace
+        """
+        Mata un nodo ROS 2 usando pkill con el patrón __node:=<nombre>.
+        Se asegura de no matar la propia GUI.
+        """
+        import subprocess
+        # Patrón seguro: busca el argumento exacto __node:=/planning/clips_node
+        # o __node:=clips_node (con o sin namespace)
+        short_name = node_name.split('/')[-1]
+        # Construimos dos patrones y los combinamos con -e (regex extendida)
+        # Por ejemplo: pkill -9 -f "__node:=/planning/clips_node|__node:=clips_node"
+        pattern = f"__node:={node_name}|__node:={short_name}"
         try:
-            ps = subprocess.run(['ps', 'aux'], capture_output=True, text=True, timeout=3)
-            for line in ps.stdout.split('\n'):
-                # Saltar procesos del sistema y del propio script
-                if 'python3' in line and 'gui_controller.py' in line:
-                    continue
-                # Buscar el nodo: ya sea como __node:=/completo, __node:=corto o solo el corto como palabra
-                if (f'__node:={node_name}' in line or 
-                    f'__node:={short_name}' in line or
-                    f'{short_name}' in line.split()):  
-                    # Si aparece el nombre corto en los argumentos (evita falsos positivos, pero bueno)
-                    # Extraer PID
-                    parts = line.split()
-                    if len(parts) > 1:
-                        pid = parts[1]
-                        try:
-                            os.kill(int(pid), signal.SIGKILL)
-                            self.get_logger().info(f'  Nodo {node_name} eliminado (PID {pid})')
-                            return True
-                        except ProcessLookupError:
-                            self.get_logger().info(f'  PID {pid} ya no existe')
-                            return False
-                        except Exception as e:
-                            self.get_logger().warning(f'  Error al matar PID {pid}: {e}')
-                            return False
-            self.get_logger().info(f'  No se encontró proceso para {node_name}')
-            return False
+            # Excluimos explícitamente procesos que contengan gui_controller (por si acaso)
+            cmd = f"pkill -9 -f '{pattern}'"
+            # Realizamos un pgrep primero para ver qué procesos coinciden y no incluir el nuestro
+            pgrep_cmd = f"pgrep -f '{pattern}'"
+            result = subprocess.run(pgrep_cmd, shell=True, capture_output=True, text=True, timeout=3)
+            if result.returncode == 0:
+                pids = result.stdout.strip().split()
+                for pid in pids:
+                    # Antes de matar, verificamos que no sea el proceso de la GUI
+                    # Inspeccionar la línea completa del proceso
+                    ps_info = subprocess.run(['ps', '-p', pid, '-o', 'args='], 
+                                             capture_output=True, text=True, timeout=2)
+                    if 'gui_controller' in ps_info.stdout:
+                        self.get_logger().info(f"  Omitiendo PID {pid} (es el propio GUI controller)")
+                        continue
+                    # Matamos con pkill individualmente o con kill
+                    os.kill(int(pid), signal.SIGKILL)
+                    self.get_logger().info(f"  Nodo {node_name} eliminado (PID {pid})")
+                return True
+            else:
+                self.get_logger().info(f"  No se encontraron procesos para {node_name}")
+                return False
         except Exception as e:
-            self.get_logger().error(f'Error matando {node_name}: {e}')
+            self.get_logger().error(f"Error al matar {node_name} con pkill: {e}")
             return False
 
     def kill_orphan_nodes(self, keep_nodes: list = None):
-        """
-        Mata todos los nodos ROS 2 actualmente en ejecución excepto:
-        - El propio nodo de monitoreo (gui_controller)
-        - Los nodos listados en keep_nodes (si se proporciona)
-        Utiliza búsqueda por proceso (ps aux + __node:=...) para ROS 2 Jazzy.
-        """
         self.get_logger().info("Iniciando limpieza de nodos residuales...")
         self.refresh_node_list()
         current_nodes = set(self.running_nodes)
         our_name = '/' + self.get_name()
-
-        # Nodos a matar: todos menos el nuestro
         nodes_to_kill = current_nodes - {our_name}
-        # Si se proporciona lista de nodos a conservar, también los excluimos
         if keep_nodes is not None:
             nodes_to_kill -= set(keep_nodes)
-
         if not nodes_to_kill:
             self.get_logger().info("No se encontraron nodos residuales.")
             return
-
         self.get_logger().info(f"Eliminando {len(nodes_to_kill)} nodos residuales...")
-
-        # Buscar y matar por PID usando el argumento __node:=
-        import subprocess, os, signal
-        try:
-            ps_result = subprocess.run(
-                ['ps', 'aux'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            lines = ps_result.stdout.split('\n')
-            for line in lines:
-                # Ignorar procesos del sistema y del propio script GUI
-                if 'python3' in line and 'gui_controller.py' in line:
-                    continue
-                if 'ps aux' in line:   # el propio comando de búsqueda
-                    continue
-                for node_name in nodes_to_kill:
-                    # Buscar el patrón __node:=/nombre_nodo
-                    if f'__node:={node_name}' in line or f'__node:={node_name.split("/")[-1]}' in line:
-                        parts = line.split()
-                        if len(parts) > 1:
-                            pid = parts[1]
-                            try:
-                                os.kill(int(pid), signal.SIGKILL)
-                                self.get_logger().info(f"  SIGKILL enviado a {node_name} (PID {pid})")
-                                break  # solo un PID por nodo
-                            except ProcessLookupError:
-                                pass
-                            except Exception as e:
-                                self.get_logger().warning(f"  Error matando PID {pid}: {e}")
-        except Exception as e:
-            self.get_logger().error(f"Error en limpieza por PID: {e}")
-
+        for node_name in nodes_to_kill:
+            self.kill_node_by_name(node_name)
         self.get_logger().info("Limpieza completada.")
 
 
