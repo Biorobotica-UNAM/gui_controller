@@ -11,7 +11,10 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Justina | Takeshi GUI</string>
+   <string>Justina GUI</string>
+  </property>
+  <property name="layoutDirection">
+   <enum>Qt::LeftToRight</enum>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="mainVerticalLayout">
@@ -37,6 +40,9 @@
       <property name="title">
        <string>📋 Estado de los Nodos</string>
       </property>
+      <property name="alignment">
+       <set>Qt::AlignCenter</set>
+      </property>
       <layout class="QVBoxLayout" name="verticalLayoutMonitor">
        <item>
         <widget class="QListWidget" name="nodeListWidget">
@@ -61,10 +67,44 @@
       </property>
      </widget>
     </item>
+    <item alignment="Qt::AlignRight">
+     <widget class="QCheckBox" name="autoCloseTerminalCheckBox">
+      <property name="maximumSize">
+       <size>
+        <width>250</width>
+        <height>16777215</height>
+       </size>
+      </property>
+      <property name="font">
+       <font>
+        <italic>true</italic>
+        <underline>false</underline>
+       </font>
+      </property>
+      <property name="layoutDirection">
+       <enum>Qt::LeftToRight</enum>
+      </property>
+      <property name="autoFillBackground">
+       <bool>false</bool>
+      </property>
+      <property name="text">
+       <string>Cerrar terminal al finalizar</string>
+      </property>
+      <property name="checked">
+       <bool>true</bool>
+      </property>
+      <property name="autoRepeat">
+       <bool>false</bool>
+      </property>
+     </widget>
+    </item>
     <item>
      <widget class="QGroupBox" name="surgeGroupBox">
       <property name="title">
        <string>⚑ Surge et Ambula (justina.launch.xml)</string>
+      </property>
+      <property name="alignment">
+       <set>Qt::AlignCenter</set>
       </property>
       <layout class="QHBoxLayout" name="horizontalLayoutSurge">
        <property name="leftMargin">
@@ -88,76 +128,38 @@
           <string notr="true">background-color: #4CAF50; color: white; font-weight: bold;</string>
          </property>
          <property name="text">
-          <string>▶ Iniciar Launch</string>
+          <string>▶ Iniciar Justina</string>
          </property>
         </widget>
        </item>
-      </layout>
-     </widget>
-    </item>
-    <item>
-     <widget class="QGroupBox" name="planningGroupBox">
-      <property name="title">
-       <string>🗺 Planning</string>
-      </property>
-      <layout class="QVBoxLayout" name="verticalLayoutPlanning">
        <item>
-        <layout class="QHBoxLayout" name="horizontalLayoutPlanningButtons">
-         <property name="leftMargin">
-          <number>10</number>
+        <widget class="QLabel" name="planningConfigLabel">
+         <property name="enabled">
+          <bool>true</bool>
          </property>
-         <item>
-          <widget class="QPushButton" name="startPlanningButton">
-           <property name="minimumSize">
-            <size>
-             <width>0</width>
-             <height>40</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>300</width>
-             <height>16777215</height>
-            </size>
-           </property>
-           <property name="styleSheet">
-            <string notr="true">background-color: #4CAF50; color: white; font-weight: bold;</string>
-           </property>
-           <property name="text">
-            <string>▶ Cargar Plan</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="planningConfigLabel">
-           <property name="enabled">
-            <bool>true</bool>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>35</width>
-             <height>16777215</height>
-            </size>
-           </property>
-           <property name="layoutDirection">
-            <enum>Qt::LeftToRight</enum>
-           </property>
-           <property name="text">
-            <string>Plan:</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QComboBox" name="planningComboBox">
-           <property name="maximumSize">
-            <size>
-             <width>190</width>
-             <height>16777215</height>
-            </size>
-           </property>
-          </widget>
-         </item>
-        </layout>
+         <property name="maximumSize">
+          <size>
+           <width>35</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="layoutDirection">
+          <enum>Qt::LeftToRight</enum>
+         </property>
+         <property name="text">
+          <string>Plan:</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="planningComboBox">
+         <property name="maximumSize">
+          <size>
+           <width>190</width>
+           <height>16777215</height>
+          </size>
+         </property>
+        </widget>
        </item>
       </layout>
      </widget>
@@ -166,6 +168,9 @@
      <widget class="QGroupBox" name="supervisorGroupBox">
       <property name="title">
        <string>👁 Supervisor Manager (supervisor_manager_node)</string>
+      </property>
+      <property name="alignment">
+       <set>Qt::AlignCenter</set>
       </property>
       <layout class="QHBoxLayout" name="horizontalLayoutSupervisor">
        <property name="leftMargin">
@@ -189,7 +194,7 @@
           <string notr="true">background-color: #4CAF50; color: white; font-weight: bold;</string>
          </property>
          <property name="text">
-          <string>▶ Iniciar Nodo</string>
+          <string>▶ Iniciar Supervisor</string>
          </property>
         </widget>
        </item>

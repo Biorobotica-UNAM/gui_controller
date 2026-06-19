@@ -5,7 +5,6 @@ import os
 import sys
 import yaml
 import threading
-import signal
 from pathlib import Path
 from PyQt5 import uic
 from PyQt5.QtWidgets import QApplication, QMainWindow, QListWidgetItem, QMessageBox
@@ -29,7 +28,8 @@ class NodeControlPanel(QMainWindow):
         uic.loadUi(os.path.join(SCRIPT_DIR, 'node_control.ui'), self)
 
         self.ros_node = ros_node
-        self.processes = {'surge': None, 'supervisor': None, 'planning': None}
+        self.processes = {'surge': None, 'supervisor': None}
+        self.finished_terminals = {'surge': None, 'supervisor': None}
 
         # Cargar configuración de comandos y perfiles
         self.config = self.load_config()
@@ -43,7 +43,6 @@ class NodeControlPanel(QMainWindow):
         # Conectar botones
         self.startSurgeButton.clicked.connect(self.start_surge)
         self.startSupervisorButton.clicked.connect(self.start_supervisor)
-        self.startPlanningButton.clicked.connect(self.start_planning)
 
         # Timers para refrescar nodos y monitorear procesos
         self.timer = QTimer()
@@ -93,18 +92,45 @@ class NodeControlPanel(QMainWindow):
         else:
             return None
 
+    def _close_finished_terminal(self, key):
+        terminal = self.finished_terminals.get(key)
+        if terminal is None:
+            return
+        terminal.close_terminal()
+        self.finished_terminals[key] = None
+
+    def _launch_in_terminal(self, key, command):
+        self._close_finished_terminal(key)
+        keep_open = not self.autoCloseTerminalCheckBox.isChecked()
+        return ProcessLauncher.launch_in_terminal(command, self, keep_open=keep_open)
+
     def start_surge(self):
         if self.processes['surge'] is not None:
-            QMessageBox.information(self, "Ya en ejecución", "Surge et Ambula ya está en ejecución.")
+            QMessageBox.information(self, "Ya en ejecución", "Plan ya está en ejecución.")
             return
+
+        idx = self.planningComboBox.currentIndex()
+        if idx < 0:
+            QMessageBox.warning(self, "Aviso", "Por favor selecciona un plan primero.")
+            return
+
+        profiles = self.config.get('planning_profiles', [])
+        if idx >= len(profiles):
+            return
+
+        plan_name = profiles[idx]['name'].lower()
         surge_config = self.config.get('surge', {})
         command = self._build_command(surge_config)
+
         if not command:
             QMessageBox.critical(self, "Error", "No hay comandos definidos para Surge en config.yaml")
             return
+
+        command += f" plan_name:=\"{plan_name}\""
+
         try:
-            self.processes['surge'] = ProcessLauncher.launch_in_terminal(command, self)
-            self.statusLabel.setText("🚀 Surge et Ambula lanzado.")
+            self.processes['surge'] = self._launch_in_terminal('surge', command)
+            self.statusLabel.setText(f"🚀 Surge et Ambula lanzado (Plan: {profiles[idx]['name']}).")
             self.startSurgeButton.setEnabled(False)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo lanzar Surge:\n{e}")
@@ -120,49 +146,27 @@ class NodeControlPanel(QMainWindow):
             QMessageBox.critical(self, "Error", "No hay comandos definidos para Supervisor en config.yaml")
             return
         try:
-            self.processes['supervisor'] = ProcessLauncher.launch_in_terminal(command, self)
+            self.processes['supervisor'] = self._launch_in_terminal('supervisor', command)
             self.statusLabel.setText("👁 Supervisor Manager lanzado.")
             self.startSupervisorButton.setEnabled(False)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo lanzar Supervisor:\n{e}")
             self.processes['supervisor'] = None
 
-    def start_planning(self):
-        if self.processes['planning'] is not None:
-            QMessageBox.information(self, "Ya en ejecución", "Planning Tools ya está en ejecución.")
-            return
-        idx = self.planningComboBox.currentIndex()
-        if idx < 0:
-            return
-        profiles = self.config.get('planning_profiles', [])
-        if idx >= len(profiles):
-            return
-        profile = profiles[idx]
-        command = self._build_command(profile)
-        if not command:
-            QMessageBox.critical(self, "Error", f"No hay comandos definidos para el perfil {profile.get('name')}")
-            return
-        try:
-            self.processes['planning'] = ProcessLauncher.launch_in_terminal(command, self)
-            self.statusLabel.setText(f"🗺 Planning Tools lanzado ({profile['name']}).")
-            self.startPlanningButton.setEnabled(False)
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"No se pudo lanzar Planning:\n{e}")
-            self.processes['planning'] = None
-
     def check_processes_status(self):
         for key, proc in self.processes.items():
-            if proc is not None and proc.poll() is not None:
+            if proc is not None and proc.command_finished():
                 self.processes[key] = None
+                if proc.keep_open and proc.is_terminal_running():
+                    self.finished_terminals[key] = proc
+                else:
+                    proc.cleanup()
                 if key == 'surge':
                     self.startSurgeButton.setEnabled(True)
                     self.statusLabel.setText("Surge et Ambula finalizado.")
                 elif key == 'supervisor':
                     self.startSupervisorButton.setEnabled(True)
                     self.statusLabel.setText("Supervisor Manager finalizado.")
-                elif key == 'planning':
-                    self.startPlanningButton.setEnabled(True)
-                    self.statusLabel.setText("Planning Tools finalizado.")
 
     def refresh_node_list(self):
         self.ros_node.refresh_node_list()
@@ -197,14 +201,12 @@ class NodeControlPanel(QMainWindow):
 
         # Matar procesos lanzados (terminales)
         for proc in self.processes.values():
-            if proc is not None and proc.poll() is None:
-                try:
-                    if os.name == 'nt':
-                        proc.kill()
-                    else:
-                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except Exception:
-                    pass
+            if proc is not None:
+                proc.close_terminal()
+
+        for proc in self.finished_terminals.values():
+            if proc is not None:
+                proc.close_terminal()
 
         # Matar nodos ROS residuales (excluyendo los esperados)
         self.ros_node.kill_orphan_nodes(keep_nodes=self.expected_nodes)

@@ -63,7 +63,6 @@ class ROS2NodeChecker(Node):
 
     def kill_orphan_nodes(self, keep_nodes: list = None):
         """Elimina todos los nodos ROS excepto los que se quieren conservar."""
-        self.get_logger().info("Iniciando limpieza de nodos residuales...")
         self.refresh_node_list()
         current_nodes = set(self.running_nodes)
         our_name = '/' + self.get_name()
@@ -71,7 +70,6 @@ class ROS2NodeChecker(Node):
         if keep_nodes is not None:
             nodes_to_kill -= set(keep_nodes)
         if not nodes_to_kill:
-            self.get_logger().info("No se encontraron nodos residuales.")
             return
         self.get_logger().info(f"Eliminando {len(nodes_to_kill)} nodos residuales...")
         for node_name in nodes_to_kill:
