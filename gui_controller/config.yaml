@@ -1,0 +1,23 @@
+# config.yaml
+surge:
+  commands:
+    - "cd ~/Justina"
+    - "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp; export CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml; export ROS_DOMAIN_ID=0; export ROS_LOCALHOST_ONLY=0 && ros2 daemon stop && ros2 daemon start"
+    - "source install/setup.bash"
+    - "ros2 launch surge_et_ambula justina.launch.xml"
+
+supervisor:
+  commands:
+    - "cd ~/Justina"
+    - "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp; export CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml; export ROS_DOMAIN_ID=0; export ROS_LOCALHOST_ONLY=0 && ros2 daemon stop && ros2 daemon start"
+    - "source install/setup.bash"
+    - "ros2 run supervisor_manager supervisor_manager_node"
+
+planning_profiles:
+  - name: "HRI"
+  - name: "PNP Justina"
+  - name: "PNP Takeshi"
+  - name: "Laundry"
+  - name: "Restaurant"
+  - name: "Robot Inspection"
+  - name: "GPSR"

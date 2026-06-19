@@ -1,0 +1,11 @@
+#Python extentions 
+*.pyc
+
+#Clips plan log
+*.log
+#Cmake constructions 
+
+build/
+install/
+log/
+test/
