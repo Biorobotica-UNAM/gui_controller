@@ -1,14 +1,17 @@
 # config.yaml
+aliases:
+  justina_ws: "$JUSTINA_WS"
+
 surge:
   commands:
-    - "cd ~/Justina"
+    - "cd \"{justina_ws}\""
     - "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp; export CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml; export ROS_DOMAIN_ID=0; export ROS_LOCALHOST_ONLY=0 && ros2 daemon stop && ros2 daemon start"
     - "source install/setup.bash"
     - "ros2 launch surge_et_ambula justina.launch.xml"
 
 supervisor:
   commands:
-    - "cd ~/Justina"
+    - "cd \"{justina_ws}\""
     - "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp; export CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml; export ROS_DOMAIN_ID=0; export ROS_LOCALHOST_ONLY=0 && ros2 daemon stop && ros2 daemon start"
     - "source install/setup.bash"
     - "ros2 run supervisor_manager supervisor_manager_node"

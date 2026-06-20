@@ -2,6 +2,7 @@
 # gui_controller.py
 
 import os
+import re
 import sys
 import yaml
 import threading
@@ -19,6 +20,8 @@ from gui_controller.ros_checker import ROS2NodeChecker
 SCRIPT_DIR = Path(__file__).parent.resolve()
 CONFIG_PATH = SCRIPT_DIR / "config.yaml"
 NODES_PATH = SCRIPT_DIR / "nodes.yaml"
+ALIAS_PATTERN = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+ENV_VAR_PATTERN = re.compile(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))")
 
 
 class NodeControlPanel(QMainWindow):
@@ -86,11 +89,51 @@ class NodeControlPanel(QMainWindow):
     def _build_command(self, config_section):
         """Construye un comando único a partir de la lista 'commands' o str 'command' (legacy)."""
         if 'commands' in config_section:
-            return " && ".join(config_section['commands'])
+            command = " && ".join(config_section['commands'])
         elif 'command' in config_section:
-            return config_section['command']
+            command = config_section['command']
         else:
             return None
+        return self._expand_config_aliases(command)
+
+    def _expand_config_aliases(self, command):
+        aliases = self.config.get('aliases', {})
+        resolved_aliases = {}
+        resolving = set()
+
+        def resolve_alias(name):
+            if name in resolved_aliases:
+                return resolved_aliases[name]
+            if name in resolving:
+                raise ValueError(f"Alias circular en config.yaml: {name}")
+            if name not in aliases:
+                raise ValueError(f"No existe el alias {{{name}}} en config.yaml")
+
+            resolving.add(name)
+            value = str(aliases[name])
+            value = ALIAS_PATTERN.sub(lambda match: resolve_alias(match.group(1)), value)
+            value = os.path.expanduser(os.path.expandvars(value))
+            missing = [
+                var_name
+                for var_name in (
+                    match.group(1) or match.group(2)
+                    for match in ENV_VAR_PATTERN.finditer(value)
+                )
+                if var_name
+            ]
+            resolving.remove(name)
+
+            if missing:
+                env_name = missing[0]
+                raise ValueError(
+                    f"Falta definir la variable de entorno {env_name} para el alias {name}.\n"
+                    f"Agrega esto a tu ~/.bashrc:\nexport {env_name}=/ruta/a/Justina"
+                )
+
+            resolved_aliases[name] = value
+            return value
+
+        return ALIAS_PATTERN.sub(lambda match: resolve_alias(match.group(1)), command)
 
     def _close_finished_terminal(self, key):
         terminal = self.finished_terminals.get(key)
@@ -120,7 +163,11 @@ class NodeControlPanel(QMainWindow):
 
         plan_name = profiles[idx]['name'].lower()
         surge_config = self.config.get('surge', {})
-        command = self._build_command(surge_config)
+        try:
+            command = self._build_command(surge_config)
+        except ValueError as e:
+            QMessageBox.critical(self, "Error en config.yaml", str(e))
+            return
 
         if not command:
             QMessageBox.critical(self, "Error", "No hay comandos definidos para Surge en config.yaml")
@@ -144,7 +191,11 @@ class NodeControlPanel(QMainWindow):
             QMessageBox.information(self, "Ya en ejecución", "Supervisor Manager ya está en ejecución.")
             return
         sup_config = self.config.get('supervisor', {})
-        command = self._build_command(sup_config)
+        try:
+            command = self._build_command(sup_config)
+        except ValueError as e:
+            QMessageBox.critical(self, "Error en config.yaml", str(e))
+            return
         if not command:
             QMessageBox.critical(self, "Error", "No hay comandos definidos para Supervisor en config.yaml")
             return
