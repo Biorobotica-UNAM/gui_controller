@@ -125,8 +125,11 @@ class NodeControlPanel(QMainWindow):
         if not command:
             QMessageBox.critical(self, "Error", "No hay comandos definidos para Surge en config.yaml")
             return
-
-        command += f" plan_name:=\"{plan_name}\""
+        
+        if plan_name == "restaurant":
+            command += f" plan_name:=\"{plan_name}\" mapless:=true"
+        else:
+            command += f" plan_name:=\"{plan_name}\""
 
         try:
             self.processes['surge'] = self._launch_in_terminal('surge', command)

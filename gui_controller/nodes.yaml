@@ -39,7 +39,7 @@ expected_nodes:
   - /supervisor/supervisor_execution_node
   - /supervisor/supervisor_plan_node
   - /supervisor/supervisor_system_node
-  - /vision/Analize_cat_node
+  - /vision/Analize_node
   - /vision/container_drop_tf_node
   - /vision/detect_fusion_node
   - /vision/detect_seats_node
