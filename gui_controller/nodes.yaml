@@ -32,7 +32,7 @@ expected_nodes:
   - /navigation/simple_move
   - /navigation/static_map_server
   - /planning/clips_node
-  - /planning/primitive_to_clips
+  - /planning/primitive_to_clips_node
   - /planning/semantic_parser/entity_extractor_node
   - /planning/semantic_parser/semantic_node
   - /rviz2
