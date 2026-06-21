@@ -23,7 +23,6 @@ NODES_PATH = SCRIPT_DIR / "nodes.yaml"
 ALIAS_PATTERN = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 ENV_VAR_PATTERN = re.compile(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))")
 
-
 class NodeControlPanel(QMainWindow):
     def __init__(self, ros_node):
         super().__init__()
@@ -33,7 +32,7 @@ class NodeControlPanel(QMainWindow):
         self.ros_node = ros_node
         self.processes = {'surge': None, 'supervisor': None}
         self.finished_terminals = {'surge': None, 'supervisor': None}
-
+        self.GPSR = False
         # Cargar configuración de comandos y perfiles
         self.config = self.load_config()
         self.load_planning_profiles()
@@ -175,6 +174,9 @@ class NodeControlPanel(QMainWindow):
         
         if plan_name == "restaurant":
             command += f" plan_name:=\"{plan_name}\" mapless:=true"
+        elif plan_name == "gpsr":
+            command += f" plan_name:=\"{plan_name}\""
+            self.GPSR = True
         else:
             command += f" plan_name:=\"{plan_name}\""
 
@@ -200,6 +202,8 @@ class NodeControlPanel(QMainWindow):
             QMessageBox.critical(self, "Error", "No hay comandos definidos para Supervisor en config.yaml")
             return
         try:
+            if self.GPSR:
+                command += f" natural_language_planning:={str(self.GPSR).lower()}"
             self.processes['supervisor'] = self._launch_in_terminal('supervisor', command)
             self.statusLabel.setText("👁 Supervisor Manager lanzado.")
             self.startSupervisorButton.setEnabled(False)
