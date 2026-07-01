@@ -175,7 +175,7 @@ class NodeControlPanel(QMainWindow):
         if plan_name == "restaurant":
             command += f" plan_name:=\"{plan_name}\" mapless:=true"
         elif plan_name == "gpsr":
-            command += f" plan_name:=\"{plan_name}\""
+            command += f" plan_name:=goals"
             self.GPSR = True
         else:
             command += f" plan_name:=\"{plan_name}\""
