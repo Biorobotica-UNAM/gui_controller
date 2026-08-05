@@ -1,8 +1,22 @@
 expected_nodes:
   - /executor/executor_manager/executor_manager_node
   - /executor/executor_worker/executor_worker_node
-  - /hardware/camera/kinect_ros2
+  #- /hardware/camera/kinect_ros2
+  - /hardware/base/base_node
+  - /hardware/base/robotino_odometry_node
+  #- /hardware/base/joint_state_publisher
+  - /hardware/base/urg_node
+  - /hardware/base/Stop_node
   - /hardware/door_detector/door_detector_node
+  - /hardware/gui_node
+  - /hardware/head/head_node
+  - /hardware/arms/left_arm_node
+  - /hardware/arms/right_arm_node
+  - /hardware/torso/torso_node
+  - /hardware/joint_states_parser/joint_states_parser_node
+  - /hardware/grippers/left_gripper_node
+  - /hardware/grippers/right_gripper_node
+  - /hardware/robot_state_publisher
   - /hardware/scanner/scanner_node
   - /hri/human_follower_nodeV2
   - /hri/human_tracking_node
@@ -32,8 +46,9 @@ expected_nodes:
   - /navigation/simple_move
   - /navigation/static_map_server
   - /planning/clips_node
-  - /planning/primitive_to_clips_node
+  #- /planning/primitive_to_clips_node
   - /planning/semantic_parser/entity_extractor_node
+  - /planning/semantic_parser/qwen_semantic_node
   - /planning/semantic_parser/semantic_node
   - /rviz2
   - /supervisor/supervisor_execution_node
