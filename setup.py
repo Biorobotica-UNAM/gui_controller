@@ -11,8 +11,13 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
+    # Incluye todos los archivos .ui dentro del paquete Python
+    package_data={
+        package_name: ['*.ui', '*.yaml', '*.yml'],
+    },
+    include_package_data=True,
     install_requires=['setuptools'],
-    zip_safe=True,
+    zip_safe=False,
     maintainer='sergio',
     maintainer_email='sergio081096@gmail.com',
     description='TODO: Package description',
