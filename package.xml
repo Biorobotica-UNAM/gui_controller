@@ -7,6 +7,27 @@
   <maintainer email="sergio081096@gmail.com">sergio</maintainer>
   <license>TODO: License declaration</license>
 
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>locations_manager</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>actionlib_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>executor_interfaces</exec_depend>
+  <exec_depend>arms_interfaces</exec_depend>
+  <exec_depend>grippers_interfaces</exec_depend>
+  <exec_depend>head_interfaces</exec_depend>
+  <exec_depend>torso_interfaces</exec_depend>
+  <exec_depend>clips_interfaces</exec_depend>
+  <exec_depend>semantic_parser_interfaces</exec_depend>
+  <exec_depend>listener_interfaces</exec_depend>
+  <exec_depend>talker_interfaces</exec_depend>
+  <exec_depend>python3-pyqt5</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>
