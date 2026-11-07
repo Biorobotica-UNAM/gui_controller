@@ -32,11 +32,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
 
-import rclpy
-from rclpy.executors import SingleThreadedExecutor
-
 from gui_controller.launcher import ProcessLauncher
-from gui_controller.ros_checker import ROS2NodeChecker
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 CONFIG_PATH = SCRIPT_DIR / "config.yaml"
@@ -67,6 +63,7 @@ class NodeControlPanel(QMainWindow):
         self.processes = {'surge': None, 'supervisor': None}
         self.finished_terminals = {'surge': None, 'supervisor': None}
         self.GPSR = False
+        self.simulation_active = False
         self.task_sequence = []
         self.task_sequence_finished = None
         self.presentation_sequence = None
@@ -98,7 +95,8 @@ class NodeControlPanel(QMainWindow):
         # Cargar lista de nodos esperados
         self.expected_nodes = self.load_expected_nodes()
         if self.expected_nodes:
-            self.ros_node.kill_orphan_nodes(self.expected_nodes)
+            self.ros_node.kill_orphan_nodes(
+                list(set(self.expected_nodes + self.load_expected_nodes(simulation=True))))
 
         # Conectar botones
         self.startSurgeButton.clicked.connect(self.start_surge)
@@ -127,6 +125,13 @@ class NodeControlPanel(QMainWindow):
                 launch_page_layout.addWidget(widget)
         sip.delete(launch_layout)
 
+        self.useSimulationCheckBox = QCheckBox("Usar simulación")
+        self.useSimulationCheckBox.setToolTip(
+            "Lanza justina_sim.launch.xml. Los movimientos se muestran en RViz "
+            "mediante las mismas interfaces ROS del robot."
+        )
+        launch_page_layout.addWidget(self.useSimulationCheckBox)
+
         self.blankMapCheckBox = QCheckBox(
             "Iniciar Surge con el mapa en blanco (AMCL)"
         )
@@ -143,6 +148,10 @@ class NodeControlPanel(QMainWindow):
         self.demoTabs.addTab(self._create_demos_tab(), "Demostraciones")
 
         main_layout = QVBoxLayout()
+        planner_row = QHBoxLayout()
+        self.plannerStatusLabel = QLabel("Planificador: sin estado recibido")
+        planner_row.addWidget(self.plannerStatusLabel)
+        main_layout.addLayout(planner_row)
         main_layout.addWidget(self.demoTabs)
         self.centralwidget.setLayout(main_layout)
         self.resize(1000, 850)
@@ -152,7 +161,8 @@ class NodeControlPanel(QMainWindow):
         layout = QVBoxLayout(page)
         instructions = QLabel(
             "Ejecuta una acción del executor. Los argumentos se envían como "
-            "un solo texto, igual que en los planes."
+            "un solo texto, igual que en los planes. En esta prueba, listen "
+            "ignora el argumento y repite lo escuchado sin analizar categorías."
         )
         instructions.setWordWrap(True)
         layout.addWidget(instructions)
@@ -412,7 +422,21 @@ class NodeControlPanel(QMainWindow):
         self.signals.forward_navigation_status.connect(
             self._on_forward_navigation_status)
 
+    def _supervisor_running(self):
+        process = self.processes.get('supervisor')
+        if process is not None and not process.command_finished():
+            return True
+        return any(
+            name.rsplit('/', 1)[-1] == 'supervisor_manager_node'
+            for name in self.ros_node.running_nodes
+        )
+
+    def _planner_blocks_manual_control(self):
+        # A loaded plan is not executing until supervisor_manager dispatches it.
+        return self._supervisor_running() and self.ros_node.plan_active is not False
+
     def _can_control_robot(self):
+        self.ros_node.refresh_node_list()
         if (
             self.task_busy
             or self.hardware_busy
@@ -424,11 +448,15 @@ class NodeControlPanel(QMainWindow):
                 self, "Acción en curso",
                 "Espera a que termine el control actual antes de iniciar otro.")
             return False
-        if self.ros_node.plan_active is not False:
+        if self._planner_blocks_manual_control():
+            unknown = self.ros_node.plan_active is None
             QMessageBox.warning(
-                self, "Planificador ocupado",
-                "No se puede iniciar una demostración mientras el estado del "
-                "planificador no confirme que está inactivo.")
+                self, "Estado del planificador desconocido" if unknown else "Planificador ocupado",
+                "El Supervisor está iniciado, pero no se recibió el estado del "
+                "planificador. Verifica el nodo supervisor_plan."
+                if unknown else
+                "El planificador tiene un plan activo. Espera a que termine antes "
+                "de iniciar el control manual.")
             return False
         return True
 
@@ -461,7 +489,10 @@ class NodeControlPanel(QMainWindow):
         action, argument = self.task_sequence[0]
         self.active_task_action = action
         self.actionLog.append(f"→ {action} {argument}".rstrip())
-        self.ros_node.send_task(action, argument)
+        if action == 'listen':
+            self.ros_node.listen_and_repeat()
+        else:
+            self.ros_node.send_task(action, argument)
 
     def _set_demo_controls_enabled(self, enabled):
         self.runActionButton.setEnabled(enabled)
@@ -485,8 +516,13 @@ class NodeControlPanel(QMainWindow):
 
     def _run_selected_action(self):
         action = self.actionComboBox.currentText()
+        if action == 'say' and not self.actionArgumentEdit.text().strip():
+            QMessageBox.warning(
+                self, "Texto requerido", "Escribe en Argumento el texto que Justina debe decir.")
+            self.actionArgumentEdit.setFocus()
+            return
         self._start_task_sequence(
-            [(action, self.actionArgumentEdit.text())], action)
+            [(action, '' if action == 'listen' else self.actionArgumentEdit.text())], action)
 
     def _cancel_action(self):
         if self.base_mobility_sequence is not None:
@@ -989,7 +1025,7 @@ class NodeControlPanel(QMainWindow):
             self._set_demo_controls_enabled(True)
 
     def _request_gpsr_command(self):
-        if self.GPSR:
+        if self.GPSR and self._supervisor_running():
             QMessageBox.warning(
                 self, "GPSR ya activo",
                 "El perfil GPSR actual inicia su propio flujo de voz. Para "
@@ -1046,7 +1082,7 @@ class NodeControlPanel(QMainWindow):
             self._set_demo_controls_enabled(True)
             self.demoLog.append("GPSR cancelado antes de enviar el plan.")
             return
-        if self.ros_node.plan_active is not False:
+        if self._planner_blocks_manual_control():
             self.gpsr_busy = False
             self._set_demo_controls_enabled(True)
             self.demoLog.append(
@@ -1106,11 +1142,12 @@ class NodeControlPanel(QMainWindow):
                 f"You can still type a location name.\n\n{error}",
             )
 
-    def load_expected_nodes(self):
+    def load_expected_nodes(self, simulation=False):
         try:
             with open(NODES_PATH, 'r') as f:
                 data = yaml.safe_load(f)
-                nodes = data.get('expected_nodes', [])
+                key = 'simulation_expected_nodes' if simulation else 'expected_nodes'
+                nodes = data.get(key, [])
             self.statusLabel.setText(f"Configuración cargada: {len(nodes)} nodos esperados")
             return nodes
         except FileNotFoundError:
@@ -1201,7 +1238,9 @@ class NodeControlPanel(QMainWindow):
             return
 
         plan_name = profiles[idx]['name'].lower()
-        surge_config = self.config.get('surge', {})
+        use_simulation = self.useSimulationCheckBox.isChecked()
+        section = 'surge_simulation' if use_simulation else 'surge'
+        surge_config = self.config.get(section, {})
         try:
             command = self._build_command(surge_config)
         except ValueError as e:
@@ -1225,10 +1264,13 @@ class NodeControlPanel(QMainWindow):
 
         try:
             self.processes['surge'] = self._launch_in_terminal('surge', command)
+            self.simulation_active = use_simulation
+            self.expected_nodes = self.load_expected_nodes(simulation=use_simulation)
+            self.useSimulationCheckBox.setEnabled(False)
             map_mode = "AMCL con mapa en blanco" if use_blank_map else "AMCL con mapa"
             self.statusLabel.setText(
                 f"Surge et Ambula lanzado (Plan: {profiles[idx]['name']}, "
-                f"{map_mode}).")
+                f"{map_mode}, {'simulación' if use_simulation else 'robot físico'}).")
             self.startSurgeButton.setEnabled(False)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo lanzar Surge:\n{e}")
@@ -1237,6 +1279,13 @@ class NodeControlPanel(QMainWindow):
     def start_supervisor(self):
         if self.processes['supervisor'] is not None:
             QMessageBox.information(self, "Ya en ejecución", "Supervisor Manager ya está en ejecución.")
+            return
+        self.ros_node.refresh_node_list()
+        if self._supervisor_running():
+            QMessageBox.information(
+                self, "Ya en ejecución", "Supervisor Manager ya está iniciado fuera de esta interfaz.")
+            return
+        if not self._can_control_robot():
             return
         sup_config = self.config.get('supervisor', {})
         try:
@@ -1298,6 +1347,9 @@ class NodeControlPanel(QMainWindow):
         self.forward_navigation_busy = False
         self.active_task_action = None
         self.GPSR = False
+        self.simulation_active = False
+        self.useSimulationCheckBox.setEnabled(True)
+        self.expected_nodes = self.load_expected_nodes()
         self.ros_node.forward_goal_pending = False
         self.ros_node.forward_goal_saw_active = False
         self.ros_node.navigation_active = False
@@ -1314,16 +1366,23 @@ class NodeControlPanel(QMainWindow):
 
     def refresh_node_list(self):
         self.ros_node.refresh_node_list()
+        state = self.ros_node.plan_active
+        self.plannerStatusLabel.setText(
+            "Planificador: " + (
+                "Supervisor sin iniciar; control manual disponible" if not self._supervisor_running() else
+                "inactivo; control manual disponible" if state is False else
+                "ocupado; plan activo" if state is True else "sin estado recibido"))
         running = set(self.ros_node.running_nodes)
         expected_nodes = list(self.expected_nodes)
 
         self.gpsrButton.setEnabled(
-            self.ros_node.plan_active is False
-            and not self.GPSR
+            not self._planner_blocks_manual_control()
+            and not (self.GPSR and self._supervisor_running())
             and not self.ros_node.navigation_active
             and not self.task_busy
             and not self.hardware_busy
             and not self.gpsr_busy
+            and not self.forward_navigation_busy
         )
 
         self.nodeListWidget.clear()
@@ -1374,7 +1433,23 @@ def ros_spin(executor):
         print(f"Error en spin de ROS: {e}")
 
 
+def configure_ros_environment(config_path=CONFIG_PATH):
+    # Must run before rclpy.init(): changing RMW after node creation is too late.
+    with open(config_path, encoding='utf-8') as config_file:
+        config = yaml.safe_load(config_file) or {}
+    for name, value in config.get('ros_environment', {}).items():
+        if name not in {'RMW_IMPLEMENTATION', 'CYCLONEDDS_URI', 'ROS_DOMAIN_ID', 'ROS_LOCALHOST_ONLY'}:
+            raise ValueError(f'Variable ROS no admitida en config.yaml: {name}')
+        os.environ[name] = str(value)
+
+
 def main():
+    configure_ros_environment()
+    # Importing ROS action support can load the RMW library. Configure first.
+    import rclpy
+    from rclpy.executors import SingleThreadedExecutor
+    from gui_controller.ros_checker import ROS2NodeChecker
+
     rclpy.init()
     signals = GuiSignals()
     ros_node = ROS2NodeChecker(signals)

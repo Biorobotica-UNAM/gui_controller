@@ -67,6 +67,7 @@ class ROS2NodeChecker(Node):
         self.pending_goal_future = None
         self.pending_goal_action = None
         self.pending_speech_future = None
+        self.pending_listen_future = None
         self.cancel_requested = False
         self.active_test_goal_id = None
         self.test_goal_terminal_status_reported = False
@@ -110,6 +111,7 @@ class ROS2NodeChecker(Node):
             self._navigation_status_callback,
             10,
         )
+
 
     def _plan_active_callback(self, message):
         self.plan_active = message.data
@@ -228,6 +230,12 @@ class ROS2NodeChecker(Node):
             )
 
     def send_task(self, action, argument=''):
+        action = action.strip()
+        if not action or (action == 'say' and not argument.strip()):
+            self.signals.task_finished.emit(
+                False, 'Escribe un texto para say.' if action == 'say' else
+                'La acción está vacía; no se envió al executor.')
+            return
         self.cancel_requested = False
         if action == 'say':
             if not self.talker_client.service_is_ready():
@@ -261,7 +269,36 @@ class ROS2NodeChecker(Node):
         future.add_done_callback(self._task_goal_response_callback)
 
     def _task_feedback_callback(self, feedback):
-        self.signals.task_feedback.emit(feedback.feedback.message)
+        self.signals.task_feedback.emit(feedback.feedback.feedback.message)
+
+    def listen_and_repeat(self):
+        self.cancel_requested = False
+        if not self.listener_client.service_is_ready():
+            self.signals.task_finished.emit(False, 'Servicio de reconocimiento de voz no disponible.')
+            return
+        request = Listen.Request()
+        request.enable = True
+        request.grammar = ''
+        self.signals.task_feedback.emit('[listen] Escuchando sin categoría...')
+        self.pending_listen_future = self.listener_client.call_async(request)
+        self.pending_listen_future.add_done_callback(self._listen_and_repeat_callback)
+
+    def _listen_and_repeat_callback(self, future):
+        self.pending_listen_future = None
+        if self.cancel_requested:
+            self.signals.task_finished.emit(False, 'Prueba de escucha cancelada; no se repetirá el texto.')
+            return
+        try:
+            response = future.result()
+            text = response.recognized_speech.strip()
+            if not response.success or not text:
+                self.signals.task_finished.emit(False, 'No se reconoció una frase para repetir.')
+                return
+        except Exception as error:
+            self.signals.task_finished.emit(False, f'Error al escuchar: {error}')
+            return
+        self.signals.task_feedback.emit(f'[listen] Escuchado: {text}')
+        self.send_task('say', f'I heard this: {text}')
 
     def _task_goal_response_callback(self, future):
         try:
@@ -346,6 +383,9 @@ class ROS2NodeChecker(Node):
         self.cancel_requested = True
         if self.active_goal_handle is not None:
             self._send_task_cancel(self.active_goal_handle)
+        elif self.pending_listen_future is not None:
+            self.signals.task_cancel_feedback.emit(
+                True, 'La escucha terminará con la respuesta del servicio; no se repetirá lo escuchado.')
         elif self.pending_speech_future is not None:
             self.signals.task_cancel_feedback.emit(
                 True,

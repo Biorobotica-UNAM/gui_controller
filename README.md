@@ -1,5 +1,40 @@
 # gui_controller
 
+## Comunicación ROS
+
+`ros_environment` en `config.yaml` configura CycloneDDS y el dominio antes de
+`rclpy.init()`. Surge y Supervisor heredan ese mismo entorno. En las pruebas
+locales, mezclar el cliente Fast DDS con el servicio CycloneDDS hizo llegar
+texto vacío; con CycloneDDS en ambos extremos se recibió el texto completo.
+Es necesario cerrar el GUI y volverlo a abrir para cambiar el middleware.
+
+## Usar simulación
+
+Marca **Usar simulación** en Lanzamiento antes de iniciar Surge. Se utiliza
+`justina_sim.launch.xml` y RViz muestra la base, cabeza, torso, brazos y grippers
+mediante las mismas interfaces ROS que utiliza el robot físico. La selección
+queda bloqueada hasta que Surge termina. El monitor usa la lista de nodos de
+simulación de `nodes.yaml`.
+
+El mapa en blanco y los perfiles también se aplican a la simulación. El GUI
+desactiva el uso de nube de puntos en este modo porque no lanza una cámara.
+Se conserva el reloj real (`use_sim_time:=false`); usar simulación no requiere
+un publicador `/clock`.
+
+Los anuncios siguen usando los servicios HRI. Las acciones que requieren
+percepción, objetos o MoveIt necesitan sus módulos y entradas adicionales;
+este simulador visualiza movimientos, sin simular agarres físicos ni cámaras.
+Ejecuta el modo simulado sin drivers del robot físico en el mismo dominio ROS,
+pues ambos usan los mismos nombres de servicios y tópicos.
+
+Después de modificar el código, recompila desde el workspace:
+
+```bash
+colcon build --symlink-install --packages-select justina_sim surge_et_ambula gui_controller
+source install/setup.bash
+ros2 run gui_controller gui_controller
+```
+
 ## Configuracion local
 
 El GUI usa la variable de entorno `JUSTINA_WS` para ubicar el workspace de Justina.
@@ -38,6 +73,11 @@ o Supervisor.
 - **Lanzamiento** Surge y Supervisor.
 - **Acciones** permite enviar al executor las acciones registradas en
   `executor_worker`, con un campo de argumento y feedback.
+  Como excepción de prueba, `listen` ignora el argumento, escucha mediante
+  `/hri/listener/listen` y dice «I heard this:» seguido de la frase mediante
+  `/hri/talker/talk`, sin
+  parser de categorías ni cambios al conocimiento. El `listen` del executor
+  utilizado por los planes conserva su comportamiento original.
 - **Hardware** reutiliza las rutinas `test_head`, `test_torso` y `test_arms`;
   tambien ofrece posiciones de torso/cabeza, las poses de brazo ya definidas
   por el proyecto y abrir/cerrar los grippers.
@@ -60,8 +100,18 @@ objetivo de navegacion termine antes de pasar al siguiente. Avanzar y regresar
 usan la distancia seleccionada; regresar coloca el objetivo detras de la pose
 actual y orienta a Justina en sentido contrario.
 
-Los controles que mueven el robot se habilitan solo cuando
-`/supervisor/supervisor_plan/active` confirma que el planificador esta inactivo.
+Lanzar Surge carga el perfil seleccionado, pero el despacho automatico comienza
+al pulsar **Iniciar Supervisor**. Mientras `supervisor_manager_node` no este
+ejecutandose, las acciones y demostraciones manuales estan disponibles aunque
+`/supervisor/supervisor_plan/active` indique que hay instrucciones pendientes.
+Si el Supervisor esta iniciado, el control manual requiere que el planificador
+confirme estado inactivo. Se detecta tanto el proceso lanzado desde el GUI como
+un Supervisor iniciado externamente. No se permite iniciar el Supervisor durante
+una accion, movimiento o demostracion manual.
+El indicador superior distingue entre inactivo, ocupado y sin estado recibido.
+El publicador de
+estado usa durabilidad `transient_local` para que el GUI reciba el ultimo estado
+incluso si se abre despues del planificador.
 La demo GPSR escucha y muestra las metas antes de pedir confirmacion; al
 aceptarlas, `goals_to_clips` reinicia el contexto de CLIPS y comienza el plan.
 Para evitar dos escuchas concurrentes, no uses esa demo cuando Surge se lanzo
